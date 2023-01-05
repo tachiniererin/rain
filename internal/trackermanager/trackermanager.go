@@ -14,6 +14,7 @@ import (
 	"github.com/cenkalti/rain/internal/tracker"
 	"github.com/cenkalti/rain/internal/tracker/httptracker"
 	"github.com/cenkalti/rain/internal/tracker/udptracker"
+	"github.com/cenkalti/rain/netwrap"
 )
 
 // TrackerManager is a manager for using the same transport for same domains/IPs.
@@ -24,12 +25,12 @@ type TrackerManager struct {
 }
 
 // New returns a new TrackerManager.
-func New(bl *blocklist.Blocklist, dnsTimeout time.Duration, tlsSkipVerify bool) *TrackerManager {
+func New(bl *blocklist.Blocklist, dnsTimeout time.Duration, tlsSkipVerify bool, listenUDP netwrap.ListenUDP, dialContext netwrap.DialContext) *TrackerManager {
 	m := &TrackerManager{
 		httpTransport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: tlsSkipVerify}, // nolint: gosec
 		},
-		udpTransport: udptracker.NewTransport(bl, dnsTimeout),
+		udpTransport: udptracker.NewTransport(bl, dnsTimeout, listenUDP),
 	}
 	go m.udpTransport.Run()
 	m.httpTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -37,9 +38,8 @@ func New(bl *blocklist.Blocklist, dnsTimeout time.Duration, tlsSkipVerify bool) 
 		if err != nil {
 			return nil, err
 		}
-		var d net.Dialer
 		taddr := &net.TCPAddr{IP: ip, Port: port}
-		return d.DialContext(ctx, network, taddr.String())
+		return dialContext(ctx, network, taddr.String())
 	}
 	return m
 }

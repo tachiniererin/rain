@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +28,7 @@ import (
 	"github.com/cenkalti/rain/internal/trackermanager"
 	"github.com/juju/ratelimit"
 	"github.com/mitchellh/go-homedir"
-	"github.com/nictuku/dht"
+	"github.com/tachiniererin/dht"
 	"go.etcd.io/bbolt"
 )
 
@@ -145,6 +147,7 @@ func NewSession(cfg Config) (*Session, error) {
 		if err != nil {
 			return nil, err
 		}
+		dhtNode.Conn, err = cfg.ListenUDP("udp", net.UDPAddrFromAddrPort(netip.MustParseAddrPort(fmt.Sprintf("%s:%d", dhtConfig.Address, dhtConfig.Port))))
 		err = dhtNode.Start()
 		if err != nil {
 			return nil, err
@@ -164,7 +167,7 @@ func NewSession(cfg Config) (*Session, error) {
 		db:                 db,
 		resumer:            res,
 		blocklist:          bl,
-		trackerManager:     trackermanager.New(blTracker, cfg.DNSResolveTimeout, !cfg.TrackerHTTPVerifyTLS),
+		trackerManager:     trackermanager.New(blTracker, cfg.DNSResolveTimeout, !cfg.TrackerHTTPVerifyTLS, cfg.ListenUDP, cfg.DialContext),
 		log:                l,
 		torrents:           make(map[string]*Torrent),
 		torrentsByInfoHash: make(map[dht.InfoHash][]*Torrent),
@@ -182,11 +185,10 @@ func NewSession(cfg Config) (*Session, error) {
 					if err != nil {
 						return nil, err
 					}
-					var d net.Dialer
 					taddr := &net.TCPAddr{IP: ip, Port: port}
 					dctx, cancel := context.WithTimeout(ctx, cfg.WebseedDialTimeout)
 					defer cancel()
-					return d.DialContext(dctx, network, taddr.String())
+					return cfg.DialContext(dctx, network, taddr.String())
 				},
 				TLSHandshakeTimeout:   cfg.WebseedTLSHandshakeTimeout,
 				TLSClientConfig:       &tls.Config{InsecureSkipVerify: !cfg.WebseedVerifyTLS}, // nolint: gosec

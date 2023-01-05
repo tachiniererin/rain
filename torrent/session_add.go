@@ -17,7 +17,7 @@ import (
 	"github.com/cenkalti/rain/internal/storage/filestorage"
 	"github.com/cenkalti/rain/internal/webseedsource"
 	"github.com/gofrs/uuid"
-	"github.com/nictuku/dht"
+	"github.com/tachiniererin/dht"
 )
 
 // AddTorrentOptions contains options for adding a new torrent.

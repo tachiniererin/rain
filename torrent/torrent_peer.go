@@ -104,7 +104,7 @@ func (t *torrent) dialAddresses() {
 		if _, ok := t.connectedPeerIPs[ip]; ok {
 			continue
 		}
-		h := outgoinghandshaker.New(addr, src)
+		h := outgoinghandshaker.New(addr, src, t.dialContext)
 		t.outgoingHandshakers[h] = struct{}{}
 		t.connectedPeerIPs[ip] = struct{}{}
 		go h.Run(

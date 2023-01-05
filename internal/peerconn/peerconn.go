@@ -15,6 +15,7 @@ import (
 // Conn is a peer connection that provides a channel for receiving messages and methods for sending messages.
 type Conn struct {
 	conn     net.Conn
+	addr     net.Addr
 	reader   *peerreader.PeerReader
 	writer   *peerwriter.PeerWriter
 	messages chan any
@@ -27,6 +28,7 @@ type Conn struct {
 func New(conn net.Conn, l logger.Logger, pieceTimeout time.Duration, maxRequestsIn int, fastEnabled bool, br, bw *ratelimit.Bucket) *Conn {
 	return &Conn{
 		conn:     conn,
+		addr:     conn.RemoteAddr(), // keep a reference around as it can get nulled (e.g. due to a disconnect)
 		reader:   peerreader.New(conn, l, pieceTimeout, br),
 		writer:   peerwriter.New(conn, l, maxRequestsIn, fastEnabled, bw),
 		messages: make(chan any),
@@ -38,12 +40,12 @@ func New(conn net.Conn, l logger.Logger, pieceTimeout time.Duration, maxRequests
 
 // Addr returns the net.TCPAddr of the peer.
 func (p *Conn) Addr() *net.TCPAddr {
-	return p.conn.RemoteAddr().(*net.TCPAddr)
+	return p.addr.(*net.TCPAddr)
 }
 
 // IP returns the string representation of IP address.
 func (p *Conn) IP() string {
-	return p.conn.RemoteAddr().(*net.TCPAddr).IP.String()
+	return p.addr.(*net.TCPAddr).IP.String()
 }
 
 // String returns the remote address as string.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/cenkalti/rain/internal/logger"
 	"github.com/cenkalti/rain/internal/mse"
+	"github.com/cenkalti/rain/netwrap"
 )
 
 // Dial new connection to the address. Does the BitTorrent protocol handshake.
@@ -15,6 +16,7 @@ import (
 // Returns a net.Conn that is ready for sending/receiving BitTorrent peer protocol messages.
 func Dial(
 	addr net.Addr,
+	dialContext netwrap.DialContext,
 	dialTimeout, handshakeTimeout time.Duration,
 	enableEncryption,
 	forceEncryption bool,
@@ -38,8 +40,8 @@ func Dial(
 
 	// First connection
 	log.Debug("Connecting to peer...")
-	dialer := net.Dialer{Timeout: dialTimeout}
-	conn, err = dialer.DialContext(ctx, addr.Network(), addr.String())
+	dialCtx, _ := context.WithTimeout(ctx, dialTimeout)
+	conn, err = dialContext(dialCtx, addr.Network(), addr.String())
 	if err != nil {
 		return
 	}
@@ -97,7 +99,8 @@ func Dial(
 			// Close current connection and try again without encryption
 			conn.Close()
 			log.Debug("Connecting again without encryption...")
-			conn, err = dialer.DialContext(ctx, addr.Network(), addr.String())
+			dialCtx, _ = context.WithTimeout(ctx, dialTimeout)
+			conn, err = dialContext(dialCtx, addr.Network(), addr.String())
 			if err != nil {
 				return
 			}

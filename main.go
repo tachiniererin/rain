@@ -2,9 +2,13 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
+	"net"
 	"net/http"
+	"net/netip"
 
 	// nolint: gosec
 	_ "net/http/pprof"
@@ -29,8 +33,29 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/urfave/cli"
 	"github.com/zeebo/bencode"
+	"golang.zx2c4.com/wireguard/conn"
+	"golang.zx2c4.com/wireguard/device"
+	"golang.zx2c4.com/wireguard/tun/netstack"
+	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v2"
 )
+
+type Interface struct {
+	PrivateKey string
+	Address    string
+	DNS        string
+}
+
+type Peer struct {
+	PublicKey  string
+	AllowedIPs string
+	Endpoint   string
+}
+
+type WgConf struct {
+	Interface
+	Peer
+}
 
 var (
 	app = cli.NewApp()
@@ -66,6 +91,10 @@ func main() {
 			Name:   "pprof",
 			Hidden: true,
 			Usage:  "run pprof server on `ADDR`",
+		},
+		cli.StringFlag{
+			Name:  "wgconf",
+			Usage: "route traffic via userspace wireguard using config from `FILE`",
 		},
 	}
 	app.Before = handleBeforeCommand
@@ -653,6 +682,76 @@ func prepareConfig(c *cli.Context) (torrent.Config, error) {
 			log.Debug("\n" + string(b))
 		}
 	}
+
+	if c.GlobalString("wgconf") != "" {
+		var wg WgConf
+		err := ini.MapTo(&wg, c.GlobalString("wgconf"))
+		if err != nil {
+			log.Panicf("could not read wg config: %v", err)
+		}
+
+		parts := strings.Split(wg.Address, ",")
+		localAddresses := make([]netip.Addr, len(parts))
+		var dhtHost string // first IPv4 address from the config
+		for i, part := range parts {
+			localAddresses[i], err = netip.ParseAddr(strings.Split(part, "/")[0])
+			if err != nil {
+				log.Panicf("couldn't parse %s as an IP address: %v", part, err)
+			}
+			if localAddresses[i].Is4() && dhtHost == "" {
+				dhtHost = localAddresses[i].String()
+			}
+		}
+
+		tun, tnet, err := netstack.CreateNetTUN(localAddresses, []netip.Addr{netip.MustParseAddr(wg.DNS)}, 1420)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelError, ""))
+
+		privateKey, err := base64.StdEncoding.DecodeString(wg.PrivateKey)
+		if err != nil {
+			log.Panicf("couldn't decode privatekey as base64: %v", err)
+		}
+		publicKey, err := base64.StdEncoding.DecodeString(wg.PublicKey)
+		if err != nil {
+			log.Panicf("couldn't decode publickey as base64: %v", err)
+		}
+
+		err = dev.IpcSet(fmt.Sprintf(
+			"private_key=%s\npublic_key=%s\nendpoint=%s\nallowed_ip=0.0.0.0/0",
+			hex.EncodeToString(privateKey),
+			hex.EncodeToString(publicKey),
+			wg.Endpoint,
+		))
+
+		if err != nil {
+			log.Fatalf("config error: %v", err)
+		}
+
+		err = dev.Up()
+		if err != nil {
+			log.Panic(err)
+		}
+
+		net.DefaultResolver = &net.Resolver{Dial: tnet.DialContext}
+
+		cfg.DialContext = tnet.DialContext
+		cfg.ListenTCP = func(network string, laddr *net.TCPAddr) (net.Listener, error) { return tnet.ListenTCP(laddr) }
+		cfg.ListenUDP = func(network string, laddr *net.UDPAddr) (net.PacketConn, error) {
+			// select a random high port if port is 0
+			if laddr.Port == 0 {
+				laddr.Port = 10000 + rand.Intn(55335)
+			}
+			return tnet.ListenUDP(laddr)
+		}
+		cfg.DHTHost = dhtHost
+		cfg.DHTPort = uint16(10000 + rand.Intn(55335))
+
+		log.Infoln("Routing traffic over WireGourd")
+	}
+
 	return cfg, nil
 }
 

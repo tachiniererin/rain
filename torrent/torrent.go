@@ -36,6 +36,7 @@ import (
 	"github.com/cenkalti/rain/internal/urldownloader"
 	"github.com/cenkalti/rain/internal/verifier"
 	"github.com/cenkalti/rain/internal/webseedsource"
+	"github.com/cenkalti/rain/netwrap"
 	"github.com/rcrowley/go-metrics"
 )
 
@@ -261,6 +262,8 @@ type torrent struct {
 	completeCmdRun bool
 
 	log logger.Logger
+
+	dialContext netwrap.DialContext
 }
 
 // newTorrent2 is a constructor for torrent struct.
@@ -363,6 +366,7 @@ func newTorrent2(
 		stopAfterDownload:         stopAfterDownload,
 		stopAfterMetadata:         stopAfterMetadata,
 		completeCmdRun:            completeCmdRun,
+		dialContext:               s.config.DialContext,
 	}
 	if len(t.webseedSources) > s.config.WebseedMaxSources {
 		t.webseedSources = t.webseedSources[:10]

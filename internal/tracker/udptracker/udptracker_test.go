@@ -9,6 +9,7 @@ import (
 
 	"github.com/cenkalti/rain/internal/tracker"
 	"github.com/cenkalti/rain/internal/tracker/udptracker"
+	"github.com/cenkalti/rain/netwrap"
 	"github.com/chihaya/chihaya/frontend/udp"
 	"github.com/chihaya/chihaya/middleware"
 	"github.com/chihaya/chihaya/storage"
@@ -55,7 +56,7 @@ func TestUDPTracker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tr := udptracker.NewTransport(nil, 5*time.Second)
+	tr := udptracker.NewTransport(nil, 5*time.Second, netwrap.DefaultListenUDP)
 	go tr.Run()
 	defer tr.Close()
 	trk := udptracker.New(rawURL, u, tr)

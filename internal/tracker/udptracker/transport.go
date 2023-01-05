@@ -16,6 +16,7 @@ import (
 	"github.com/cenkalti/rain/internal/logger"
 	"github.com/cenkalti/rain/internal/resolver"
 	"github.com/cenkalti/rain/internal/tracker"
+	"github.com/cenkalti/rain/netwrap"
 	"github.com/zeebo/bencode"
 )
 
@@ -41,10 +42,13 @@ type Transport struct {
 
 	// This channel will be closed after Transport.Run loop ends.
 	doneC chan struct{}
+
+	// used to create a UDP socket
+	listenUDP netwrap.ListenUDP
 }
 
 // NewTransport returns a new UDP tracker transport.
-func NewTransport(bl *blocklist.Blocklist, dnsTimeout time.Duration) *Transport {
+func NewTransport(bl *blocklist.Blocklist, dnsTimeout time.Duration, listenUDP netwrap.ListenUDP) *Transport {
 	return &Transport{
 		blocklist:  bl,
 		log:        logger.New("udp tracker transport"),
@@ -53,6 +57,7 @@ func NewTransport(bl *blocklist.Blocklist, dnsTimeout time.Duration) *Transport 
 		readC:      make(chan []byte),
 		closeC:     make(chan struct{}),
 		doneC:      make(chan struct{}),
+		listenUDP:  listenUDP,
 	}
 }
 
@@ -89,7 +94,7 @@ func (t *Transport) Run() {
 	t.log.Debugln("Starting transport run loop")
 	var listening bool
 	var laddr net.UDPAddr
-	udpConn, listenErr := net.ListenUDP("udp4", &laddr)
+	udpConn, listenErr := t.listenUDP("udp4", &laddr)
 	if listenErr != nil {
 		t.log.Error(listenErr)
 	} else {
@@ -254,12 +259,12 @@ func (t *Transport) Run() {
 }
 
 // readLoop reads datagrams from connection and sends to the run loop.
-func (t *Transport) readLoop(conn net.Conn) {
+func (t *Transport) readLoop(conn net.PacketConn) {
 	// Read buffer must be big enough to hold a UDP packet of maximum expected size.
 	const maxNumWant = 1000
 	bigBuf := make([]byte, 20+6*maxNumWant)
 	for {
-		n, err := conn.Read(bigBuf)
+		n, _, err := conn.ReadFrom(bigBuf)
 		if err != nil {
 			select {
 			case <-t.closeC:
@@ -289,7 +294,7 @@ type connectionResult struct {
 	connectedAt time.Time
 }
 
-func resolveDestinationAndConnect(trx *transaction, dest string, udpConn *net.UDPConn, dnsTimeout time.Duration, blocklist *blocklist.Blocklist, resultC chan *connectionResult, stopC chan struct{}) {
+func resolveDestinationAndConnect(trx *transaction, dest string, udpConn net.PacketConn, dnsTimeout time.Duration, blocklist *blocklist.Blocklist, resultC chan *connectionResult, stopC chan struct{}) {
 	res := &connectionResult{
 		trx:  trx,
 		dest: dest,
@@ -318,7 +323,7 @@ func resolveDestinationAndConnect(trx *transaction, dest string, udpConn *net.UD
 	}
 }
 
-func sendAndReceiveConnect(trx *transaction, conn *net.UDPConn, addr net.Addr) (connectionID int64, err error) {
+func sendAndReceiveConnect(trx *transaction, conn net.PacketConn, addr net.Addr) (connectionID int64, err error) {
 	// Send request until the transaction is canceled.
 	go retryTransaction(trx, conn, addr)
 
@@ -350,7 +355,7 @@ func sendAndReceiveConnect(trx *transaction, conn *net.UDPConn, addr net.Addr) (
 // Send the request until the transaction is canceled.
 // Transaction canceled by either via outer context or when response is received from the tracker.
 // It backs off with the algorithm described in BEP15 and retries.
-func retryTransaction(trx *transaction, conn *net.UDPConn, addr net.Addr) {
+func retryTransaction(trx *transaction, conn net.PacketConn, addr net.Addr) {
 	var b bytes.Buffer
 	_, _ = trx.request.WriteTo(&b)
 	data := b.Bytes()

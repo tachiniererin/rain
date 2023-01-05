@@ -9,29 +9,32 @@ import (
 	"github.com/cenkalti/rain/internal/logger"
 	"github.com/cenkalti/rain/internal/mse"
 	"github.com/cenkalti/rain/internal/peersource"
+	"github.com/cenkalti/rain/netwrap"
 )
 
 // OutgoingHandshaker does the BitTorrent handshake on an outgoing connection.
 type OutgoingHandshaker struct {
-	Addr       *net.TCPAddr
-	Source     peersource.Source
-	Conn       net.Conn
-	PeerID     [20]byte
-	Extensions [8]byte
-	Cipher     mse.CryptoMethod
-	Error      error
+	Addr        *net.TCPAddr
+	Source      peersource.Source
+	Conn        net.Conn
+	PeerID      [20]byte
+	Extensions  [8]byte
+	Cipher      mse.CryptoMethod
+	Error       error
+	DialContext netwrap.DialContext
 
 	closeC chan struct{}
 	doneC  chan struct{}
 }
 
 // New returns a new OutgoingHandshaker for a TCP address.
-func New(addr *net.TCPAddr, source peersource.Source) *OutgoingHandshaker {
+func New(addr *net.TCPAddr, source peersource.Source, dialContext netwrap.DialContext) *OutgoingHandshaker {
 	return &OutgoingHandshaker{
-		Addr:   addr,
-		Source: source,
-		closeC: make(chan struct{}),
-		doneC:  make(chan struct{}),
+		Addr:        addr,
+		Source:      source,
+		DialContext: dialContext,
+		closeC:      make(chan struct{}),
+		doneC:       make(chan struct{}),
 	}
 }
 
@@ -46,7 +49,7 @@ func (h *OutgoingHandshaker) Run(dialTimeout, handshakeTimeout time.Duration, pe
 	defer close(h.doneC)
 	log := logger.New("peer -> " + h.Addr.String())
 
-	conn, cipher, peerExtensions, peerID, err := btconn.Dial(h.Addr, dialTimeout, handshakeTimeout, !disableOutgoingEncryption, forceOutgoingEncryption, ourExtensions, infoHash, peerID, h.closeC)
+	conn, cipher, peerExtensions, peerID, err := btconn.Dial(h.Addr, h.DialContext, dialTimeout, handshakeTimeout, !disableOutgoingEncryption, forceOutgoingEncryption, ourExtensions, infoHash, peerID, h.closeC)
 	if err != nil {
 		if err == io.EOF {
 			log.Debug("peer has closed the connection: EOF")

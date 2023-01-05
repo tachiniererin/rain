@@ -2,9 +2,11 @@ package torrent
 
 import (
 	"io/fs"
+	"net"
 	"time"
 
 	"github.com/cenkalti/rain/internal/metainfo"
+	"github.com/cenkalti/rain/netwrap"
 )
 
 var (
@@ -193,6 +195,13 @@ type Config struct {
 
 	// Shell command to execute on torrent completion.
 	OnCompleteCmd []string
+
+	// DialContext will be used to establish connections to peers, defaults to net.Dialer
+	DialContext netwrap.DialContext
+	// ListenTCP is used to listen for incoming network connections
+	ListenTCP netwrap.ListenTCP
+	// ListenUDP is used to listen for UDP packets (peer connections and DHT)
+	ListenUDP netwrap.ListenUDP
 }
 
 // DefaultConfig for Session. Do not pass zero value Config to NewSession. Copy this struct and modify instead.
@@ -288,4 +297,9 @@ var DefaultConfig = Config{
 	WebseedVerifyTLS:               true,
 	WebseedMaxSources:              10,
 	WebseedMaxDownloads:            4,
+
+	// Network settings
+	DialContext: new(net.Dialer).DialContext,
+	ListenTCP:   netwrap.DefaultListenTCP,
+	ListenUDP:   netwrap.DefaultListenUDP,
 }
