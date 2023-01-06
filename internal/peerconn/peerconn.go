@@ -50,7 +50,7 @@ func (p *Conn) IP() string {
 
 // String returns the remote address as string.
 func (p *Conn) String() string {
-	return p.conn.RemoteAddr().String()
+	return p.addr.(*net.TCPAddr).String()
 }
 
 // Close stops receiving and sending messages and closes underlying net.Conn.
