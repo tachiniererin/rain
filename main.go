@@ -692,18 +692,18 @@ func prepareConfig(c *cli.Context) (torrent.Config, error) {
 
 		parts := strings.Split(wg.Address, ",")
 		localAddresses := make([]netip.Addr, len(parts))
-		var dhtHost string // first IPv4 address from the config
+		var wgIfAddr string // first IPv4 address from the config
 		for i, part := range parts {
 			localAddresses[i], err = netip.ParseAddr(strings.Split(part, "/")[0])
 			if err != nil {
 				log.Panicf("couldn't parse %s as an IP address: %v", part, err)
 			}
-			if localAddresses[i].Is4() && dhtHost == "" {
-				dhtHost = localAddresses[i].String()
+			if localAddresses[i].Is4() && wgIfAddr == "" {
+				wgIfAddr = localAddresses[i].String()
 			}
 		}
 
-		tun, tnet, err := netstack.CreateNetTUN(localAddresses, []netip.Addr{netip.MustParseAddr(wg.DNS)}, 1420)
+		tun, tnet, err := netstack.CreateNetTUN(localAddresses, []netip.Addr{netip.MustParseAddr(wg.DNS)}, 1400)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -746,8 +746,10 @@ func prepareConfig(c *cli.Context) (torrent.Config, error) {
 			}
 			return tnet.ListenUDP(laddr)
 		}
-		cfg.DHTHost = dhtHost
+		cfg.DHTHost = wgIfAddr
 		cfg.DHTPort = uint16(10000 + rand.Intn(55335))
+
+		cfg.Host = wgIfAddr
 
 		log.Infoln("Routing traffic over WireGourd")
 	}
