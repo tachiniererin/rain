@@ -26,9 +26,15 @@ type Conn struct {
 
 // New returns a new PeerConn by wrapping a net.Conn.
 func New(conn net.Conn, l logger.Logger, pieceTimeout time.Duration, maxRequestsIn int, fastEnabled bool, br, bw *ratelimit.Bucket) *Conn {
+	// keep a reference around as it can get nulled (e.g. due to a disconnect)
+	addr := conn.RemoteAddr()
+	if a, ok := addr.(*net.TCPAddr); ok {
+		addrCopy := *a
+		addr = &addrCopy
+	}
 	return &Conn{
 		conn:     conn,
-		addr:     conn.RemoteAddr(), // keep a reference around as it can get nulled (e.g. due to a disconnect)
+		addr:     addr,
 		reader:   peerreader.New(conn, l, pieceTimeout, br),
 		writer:   peerwriter.New(conn, l, maxRequestsIn, fastEnabled, bw),
 		messages: make(chan any),
