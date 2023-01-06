@@ -174,6 +174,9 @@ func (t *torrent) stopAcceptor() {
 	if t.acceptor != nil {
 		t.acceptor.Close()
 	}
+	if t.session.config.StopListen != nil {
+		t.session.config.StopListen(t.port)
+	}
 	t.acceptor = nil
 }
 

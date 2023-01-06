@@ -202,6 +202,8 @@ type Config struct {
 	ListenTCP netwrap.ListenTCP
 	// ListenUDP is used to listen for UDP packets (peer connections and DHT)
 	ListenUDP netwrap.ListenUDP
+
+	StopListen func(int)
 }
 
 // DefaultConfig for Session. Do not pass zero value Config to NewSession. Copy this struct and modify instead.

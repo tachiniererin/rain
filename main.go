@@ -29,10 +29,12 @@ import (
 	"github.com/cenkalti/rain/internal/metainfo"
 	"github.com/cenkalti/rain/rainrpc"
 	"github.com/cenkalti/rain/torrent"
+	"github.com/cenkalti/rain/vpnprov"
 	"github.com/hokaccha/go-prettyjson"
 	"github.com/mitchellh/go-homedir"
 	"github.com/urfave/cli"
 	"github.com/zeebo/bencode"
+	"golang.org/x/crypto/curve25519"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
@@ -61,6 +63,8 @@ var (
 	app = cli.NewApp()
 	clt *rainrpc.Client
 	log = logger.New("rain")
+
+	mullvad *vpnprov.MullvadSession
 )
 
 func main() {
@@ -95,6 +99,10 @@ func main() {
 		cli.StringFlag{
 			Name:  "wgconf",
 			Usage: "route traffic via userspace wireguard using config from `FILE`",
+		},
+		cli.StringFlag{
+			Name:  "mullvad",
+			Usage: "log in to mullvad to set port forwards with `ID`",
 		},
 	}
 	app.Before = handleBeforeCommand
@@ -738,14 +746,59 @@ func prepareConfig(c *cli.Context) (torrent.Config, error) {
 		net.DefaultResolver = &net.Resolver{Dial: tnet.DialContext}
 
 		cfg.DialContext = tnet.DialContext
-		cfg.ListenTCP = func(network string, laddr *net.TCPAddr) (net.Listener, error) { return tnet.ListenTCP(laddr) }
-		cfg.ListenUDP = func(network string, laddr *net.UDPAddr) (net.PacketConn, error) {
-			// select a random high port if port is 0
-			if laddr.Port == 0 {
-				laddr.Port = 10000 + rand.Intn(55335)
+
+		if c.GlobalString("mullvad") != "" {
+			log.Info("logging in to mullvad")
+
+			// derive public key from the endpoint private key
+			var epPublicKey [32]byte
+			curve25519.ScalarBaseMult(&epPublicKey, (*[32]byte)(privateKey))
+
+			mullvad = &vpnprov.MullvadSession{ID: c.GlobalString("mullvad")}
+			mullvad.PubKey = base64.StdEncoding.EncodeToString(epPublicKey[:])
+			mullvad.Client = &http.Client{
+				Transport: &http.Transport{
+					DialContext: tnet.DialContext,
+				},
 			}
-			return tnet.ListenUDP(laddr)
+			if err := mullvad.Login(); err != nil {
+				log.Panicf("during login: %s", err)
+			}
+
+			cfg.DialContext = tnet.DialContext
+			cfg.ListenTCP = func(network string, laddr *net.TCPAddr) (net.Listener, error) {
+				port, err := mullvad.AddForward()
+				if err != nil {
+					log.Panicln(err)
+				}
+				laddr.Port = port
+				return tnet.ListenTCP(laddr)
+			}
+			cfg.ListenUDP = func(network string, laddr *net.UDPAddr) (net.PacketConn, error) {
+				// select a random high port if port is 0
+				if laddr.Port == 0 {
+					laddr.Port = 10000 + rand.Intn(55335)
+				}
+				return tnet.ListenUDP(laddr)
+			}
+			cfg.StopListen = func(port int) {
+				if err := mullvad.RemoveForward(port); err != nil {
+					log.Errorln(err)
+				}
+			}
+		} else {
+			cfg.ListenTCP = func(network string, laddr *net.TCPAddr) (net.Listener, error) {
+				return tnet.ListenTCP(laddr)
+			}
+			cfg.ListenUDP = func(network string, laddr *net.UDPAddr) (net.PacketConn, error) {
+				// select a random high port if port is 0
+				if laddr.Port == 0 {
+					laddr.Port = 10000 + rand.Intn(55335)
+				}
+				return tnet.ListenUDP(laddr)
+			}
 		}
+
 		cfg.DHTHost = wgIfAddr
 		cfg.DHTPort = uint16(10000 + rand.Intn(55335))
 
