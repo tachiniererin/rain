@@ -22,7 +22,7 @@ func (t *torrent) checkInfoHash(infoHash [20]byte) bool {
 func (t *torrent) handleIncomingHandshakeDone(ih *incominghandshaker.IncomingHandshaker) {
 	delete(t.incomingHandshakers, ih)
 	if ih.Error != nil {
-		delete(t.connectedPeerIPs, ih.Conn.RemoteAddr().(*net.TCPAddr).IP.String())
+		delete(t.connectedPeerIPs, ih.Addr.(*net.TCPAddr).IP.String())
 		return
 	}
 	t.startPeer(ih.Conn, peersource.Incoming, t.incomingPeers, ih.PeerID, ih.Extensions, ih.Cipher)

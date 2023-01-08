@@ -13,6 +13,7 @@ import (
 // IncomingHandshaker does the BitTorrent protocol handshake on an incoming connection.
 type IncomingHandshaker struct {
 	Conn       net.Conn
+	Addr       net.Addr
 	PeerID     [20]byte
 	Extensions [8]byte
 	Cipher     mse.CryptoMethod
@@ -24,8 +25,15 @@ type IncomingHandshaker struct {
 
 // New returns a new IncomingHandshaker for a net.Conn.
 func New(conn net.Conn) *IncomingHandshaker {
+	// keep a reference around as it can get nulled (e.g. due to a disconnect)
+	addr := conn.RemoteAddr()
+	if a, ok := addr.(*net.TCPAddr); ok {
+		addrCopy := *a
+		addr = &addrCopy
+	}
 	return &IncomingHandshaker{
 		Conn:   conn,
+		Addr:   addr,
 		closeC: make(chan struct{}),
 		doneC:  make(chan struct{}),
 	}

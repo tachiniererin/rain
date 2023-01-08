@@ -68,6 +68,7 @@ type MullvadSession struct {
 	authToken   string
 	account     mullvadAccount
 	currentCity string
+	login       time.Time
 }
 
 func (s *MullvadSession) refresh() error {
@@ -172,10 +173,18 @@ func (s *MullvadSession) Login() error {
 		return err
 	}
 
+	s.login = time.Now()
+
 	return nil
 }
 
 func (s *MullvadSession) RemoveForward(port int) error {
+	if time.Since(s.login) > time.Hour {
+		if err := s.Login(); err != nil {
+			return err
+		}
+	}
+
 	b, err := json.Marshal(mullvadRemovePort{Port: port, CityCode: s.currentCity})
 	if err != nil {
 		return err
@@ -197,6 +206,12 @@ func (s *MullvadSession) RemoveForward(port int) error {
 }
 
 func (s *MullvadSession) AddForward() (int, error) {
+	if time.Since(s.login) > time.Hour {
+		if err := s.Login(); err != nil {
+			return 0, err
+		}
+	}
+
 	b, err := json.Marshal(mullvadAddPort{PubKey: s.PubKey, CityCode: s.currentCity})
 	if err != nil {
 		return 0, err
