@@ -159,6 +159,8 @@ func (s *MullvadSession) Login() error {
 
 	log.Infof("current city: %s", s.currentCity)
 
+	s.login = time.Now()
+
 	// remove all forwarded ports of this city with our pub key, in case a previous instance left something behind
 	for _, port := range s.account.CityPorts {
 		if port.WgKey == s.PubKey {
@@ -172,8 +174,6 @@ func (s *MullvadSession) Login() error {
 	if err := s.refresh(); err != nil {
 		return err
 	}
-
-	s.login = time.Now()
 
 	return nil
 }
